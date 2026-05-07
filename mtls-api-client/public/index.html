@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mTLS API Client</title>
+<style>
+/* ── Reset & Base ───────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--bg4:#21262d;
+  --border:#30363d;--text:#c9d1d9;--text2:#8b949e;--accent:#58a6ff;
+  --green:#3fb950;--orange:#d29922;--red:#f85149;--purple:#bc8cff;
+  --cyan:#39d353;--pink:#f778ba;--yellow:#e3b341;
+  --font-mono:'Consolas','Monaco','Courier New',monospace;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:6px;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:14px}
+input,select,textarea,button{font-family:inherit;font-size:inherit;color:inherit}
+input,select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+button{cursor:pointer;border:none;border-radius:var(--radius);padding:6px 14px;font-weight:600;transition:opacity .15s}
+button:hover{opacity:.85}
+::placeholder{color:var(--text2)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px}
+
+/* ── Layout ─────────────────────────────────────────────────── */
+#app{display:flex;height:100vh}
+#sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+.sidebar-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.sidebar-header h1{font-size:15px;font-weight:700;color:var(--accent)}
+.sidebar-header .logo{font-size:18px}
+.sidebar-tabs{display:flex;border-bottom:1px solid var(--border)}
+.sidebar-tab{flex:1;padding:8px;text-align:center;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.sidebar-tab:hover{color:var(--text)}
+.sidebar-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.sidebar-content{flex:1;overflow-y:auto;padding:8px}
+.sidebar-section-header{display:flex;justify-content:space-between;align-items:center;padding:4px 8px;margin-bottom:4px}
+.sidebar-section-header span{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);font-weight:600}
+.sidebar-item{padding:8px 10px;border-radius:var(--radius);cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;transition:background .1s}
+.sidebar-item:hover{background:var(--bg3)}
+.sidebar-item.active{background:var(--bg4)}
+.sidebar-item .method-badge{font-size:10px;font-weight:700;font-family:var(--font-mono);min-width:36px;text-align:center}
+.sidebar-item .item-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-item .delete-btn{opacity:0;color:var(--text2);background:none;padding:2px 4px;font-size:12px}
+.sidebar-item:hover .delete-btn{opacity:1}
+.btn-add{background:var(--bg3);color:var(--accent);font-size:12px;padding:4px 8px}
+
+/* ── Method colors ──────────────────────────────────────────── */
+.m-GET{color:var(--green)}.m-POST{color:var(--orange)}.m-PUT{color:var(--accent)}
+.m-PATCH{color:var(--purple)}.m-DELETE{color:var(--red)}.m-HEAD{color:var(--cyan)}.m-OPTIONS{color:var(--pink)}
+
+/* ── URL bar ────────────────────────────────────────────────── */
+#url-bar{display:flex;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg2)}
+#method-select{width:110px;background:var(--bg3);font-weight:700;font-family:var(--font-mono)}
+#url-input{flex:1;font-family:var(--font-mono)}
+#send-btn{background:var(--accent);color:#fff;padding:6px 24px;font-size:14px}
+#send-btn:disabled{opacity:.5;cursor:not-allowed}
+#save-btn{background:var(--bg4);color:var(--text);padding:6px 14px}
+
+/* ── Request / Response split ───────────────────────────────── */
+#panels{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#request-panel,#response-panel{overflow:hidden;display:flex;flex-direction:column}
+#request-panel{min-height:180px;border-bottom:1px solid var(--border)}
+#response-panel{flex:1}
+
+/* ── Tabs ───────────────────────────────────────────────────── */
+.tab-bar{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 12px}
+.tab-btn{padding:8px 16px;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:all .15s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-body{flex:1;overflow-y:auto;padding:12px 16px}
+
+/* ── Key-value editor ───────────────────────────────────────── */
+.kv-table{width:100%;border-collapse:collapse}
+.kv-table td{padding:3px 4px}
+.kv-table input{width:100%}
+.kv-table .kv-del{background:none;color:var(--red);font-size:16px;padding:2px 6px;opacity:.5}
+.kv-table .kv-del:hover{opacity:1}
+.kv-add{background:var(--bg3);color:var(--accent);font-size:12px;margin-top:6px}
+
+/* ── Body editor ────────────────────────────────────────────── */
+#req-body-textarea{width:100%;min-height:120px;resize:vertical;font-family:var(--font-mono);font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px}
+
+/* ── Auth / Certs form ──────────────────────────────────────── */
+.form-group{margin-bottom:10px}
+.form-group label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:600}
+.form-group input,.form-group select{width:100%}
+.form-row{display:flex;gap:8px}
+.form-row .form-group{flex:1}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-secondary{background:var(--bg4);color:var(--text)}
+.btn-danger{background:var(--red);color:#fff}
+
+/* ── Response ───────────────────────────────────────────────── */
+.response-meta{display:flex;gap:16px;padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:12px;font-family:var(--font-mono);align-items:center}
+.status-badge{padding:2px 10px;border-radius:10px;font-weight:700;color:#fff}
+.status-2xx{background:#238636}.status-3xx{background:#1f6feb}.status-4xx{background:#da3633}.status-5xx{background:#8b0000}
+.response-body-pre{font-family:var(--font-mono);font-size:13px;white-space:pre-wrap;word-break:break-all;padding:12px;background:var(--bg);border-radius:var(--radius);border:1px solid var(--border);min-height:80px;overflow:auto;max-height:100%}
+.placeholder-text{color:var(--text2);font-style:italic;display:flex;align-items:center;justify-content:center;height:100%;font-size:13px}
+
+/* ── Profile modal ──────────────────────────────────────────── */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:999}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:520px;max-height:85vh;overflow-y:auto;padding:20px}
+.modal h2{font-size:16px;margin-bottom:16px;color:var(--accent)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+/* ── Resize handle ──────────────────────────────────────────── */
+#resize-handle{height:5px;background:var(--border);cursor:row-resize;flex-shrink:0}
+#resize-handle:hover{background:var(--accent)}
+
+/* ── Spinner ────────────────────────────────────────────────── */
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--text2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <span class="logo">&#x1f512;</span>
+      <h1>mTLS Client</h1>
+    </div>
+    <div class="sidebar-tabs">
+      <div class="sidebar-tab active" data-stab="collection">Collection</div>
+      <div class="sidebar-tab" data-stab="profiles">Profiles</div>
+    </div>
+    <div class="sidebar-content" id="sidebar-body">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <div id="main">
+    <!-- URL bar -->
+    <div id="url-bar">
+      <select id="method-select">
+        <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option>
+        <option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+      </select>
+      <input id="url-input" type="text" placeholder="https://api.example.com/resource" spellcheck="false">
+      <button id="send-btn">Send</button>
+      <button id="save-btn" title="Save to collection">&#128190;</button>
+    </div>
+
+    <div id="panels">
+      <!-- Request panel -->
+      <div id="request-panel">
+        <div class="tab-bar" id="req-tabs">
+          <button class="tab-btn active" data-tab="headers">Headers</button>
+          <button class="tab-btn" data-tab="body">Body</button>
+          <button class="tab-btn" data-tab="auth">Auth</button>
+          <button class="tab-btn" data-tab="certs">Certs</button>
+        </div>
+        <div class="tab-body" id="req-tab-body">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <div id="resize-handle"></div>
+
+      <!-- Response panel -->
+      <div id="response-panel">
+        <div class="tab-bar" id="res-tabs">
+          <button class="tab-btn active" data-tab="res-body">Body</button>
+          <button class="tab-btn" data-tab="res-headers">Headers</button>
+        </div>
+        <div class="response-meta" id="res-meta" style="display:none">
+          <span id="res-status"></span>
+          <span id="res-time"></span>
+          <span id="res-size"></span>
+        </div>
+        <div class="tab-body" id="res-tab-body">
+          <div class="placeholder-text">Send a request to see the response</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Profile Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="profile-modal" style="display:none">
+  <div class="modal">
+    <h2 id="modal-title">New Profile</h2>
+    <input type="hidden" id="prof-id">
+    <div class="form-group"><label>Profile Name</label><input id="prof-name" placeholder="My API Profile"></div>
+    <h3 style="font-size:13px;color:var(--text2);margin:12px 0 8px;border-bottom:1px solid var(--border);padding-bottom:6px">mTLS Certificates</h3>
+    <div class="form-group"><label>Client Certificate (PEM path)</label><input id="prof-cert" placeholder="/path/to/client.crt"></div>
+    <div class="form-group"><label>Client Key (PEM path)</label><input id="prof-key" placeholder="/path/to/client.key"></div>
+    <div class="form-group"><label>CA Certificate (PEM path)</label><input id="prof-ca" placeholder="/path/to/ca.crt"></div>
+    <div class="form-group"><label>Passphrase</label><input id="prof-pass" type="password" placeholder="optional"></div>
+    <h3 style="font-size:13px;color:var(--text2);margin:12px 0 8px;border-bottom:1px solid var(--border);padding-bottom:6px">OAuth 2.0 Client Credentials</h3>
+    <div class="form-group"><label>Token URL</label><input id="prof-token-url" placeholder="https://auth.example.com/oauth/token"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Client ID</label><input id="prof-client-id"></div>
+      <div class="form-group"><label>Client Secret</label><input id="prof-client-secret" type="password"></div>
+    </div>
+    <div class="form-group"><label>Scope</label><input id="prof-scope" placeholder="optional scope"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeProfileModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveProfile()">Save Profile</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Save Request Modal ──────────────────────────────────── -->
+<div class="modal-overlay" id="save-modal" style="display:none">
+  <div class="modal" style="width:360px">
+    <h2>Save Request</h2>
+    <div class="form-group"><label>Name</label><input id="save-name" placeholder="My API Request"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeSaveModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveRequest()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════
+let profiles = [];
+let requests = [];
+let activeTab = 'collection';
+let activeReqTab = 'headers';
+let activeResTab = 'res-body';
+let selectedProfileId = '';
+let lastResponse = null;
+let sending = false;
+let reqHeaders = [{ key: '', value: '' }];
+let editingRequestId = null;
+
+// ═══════════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  await Promise.all([loadProfiles(), loadRequests()]);
+  renderSidebar();
+  renderReqTab();
+  renderResTab();
+  bindEvents();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Data
+// ═══════════════════════════════════════════════════════════════
+async function loadProfiles() {
+  const res = await fetch('/api/profiles');
+  profiles = await res.json();
+}
+async function loadRequests() {
+  const res = await fetch('/api/requests');
+  requests = await res.json();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Sidebar
+// ═══════════════════════════════════════════════════════════════
+function renderSidebar() {
+  const body = document.getElementById('sidebar-body');
+  if (activeTab === 'collection') {
+    body.innerHTML = `
+      <div class="sidebar-section-header"><span>Saved Requests</span><button class="btn-add" onclick="openSaveModal()">+ New</button></div>
+      ${requests.length === 0 ? '<div style="padding:12px;color:var(--text2);font-size:12px">No saved requests yet. Send a request and click 💾 to save.</div>' : ''}
+      ${requests.map(r => `
+        <div class="sidebar-item" onclick="loadRequest('${r.id}')" title="${r.url}">
+          <span class="method-badge m-${r.method}">${r.method}</span>
+          <span class="item-name">${r.name || r.url}</span>
+          <button class="delete-btn" onclick="event.stopPropagation();deleteRequest('${r.id}')" title="Delete">&times;</button>
+        </div>
+      `).join('')}`;
+  } else {
+    body.innerHTML = `
+      <div class="sidebar-section-header"><span>Profiles</span><button class="btn-add" onclick="openProfileModal()">+ New</button></div>
+      ${profiles.length === 0 ? '<div style="padding:12px;color:var(--text2);font-size:12px">No profiles yet. Create one to configure mTLS certs and OAuth.</div>' : ''}
+      ${profiles.map(p => `
+        <div class="sidebar-item ${selectedProfileId === p.id ? 'active' : ''}" onclick="selectProfile('${p.id}')">
+          <span style="color:var(--accent)">&#9679;</span>
+          <span class="item-name">${p.name || 'Unnamed'}</span>
+          <button class="delete-btn" onclick="event.stopPropagation();deleteProfile('${p.id}')" title="Delete">&times;</button>
+          <button class="delete-btn" onclick="event.stopPropagation();editProfile('${p.id}')" title="Edit" style="font-size:11px">&#9998;</button>
+        </div>
+      `).join('')}`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Sidebar tabs
+// ═══════════════════════════════════════════════════════════════
+document.querySelectorAll('.sidebar-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeTab = tab.dataset.stab;
+    renderSidebar();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Request tabs
+// ═══════════════════════════════════════════════════════════════
+function renderReqTab() {
+  const body = document.getElementById('req-tab-body');
+  if (activeReqTab === 'headers') {
+    body.innerHTML = `
+      <table class="kv-table">
+        <thead><tr><td style="width:40%;font-size:11px;color:var(--text2);padding-bottom:4px">Key</td><td style="font-size:11px;color:var(--text2);padding-bottom:4px">Value</td><td style="width:30px"></td></tr></thead>
+        <tbody id="header-rows">
+          ${reqHeaders.map((h, i) => `
+            <tr>
+              <td><input value="${esc(h.key)}" placeholder="Header name" onchange="reqHeaders[${i}].key=this.value" onfocus="autoAddHeaderRow(${i})"></td>
+              <td><input value="${esc(h.value)}" placeholder="Value" onchange="reqHeaders[${i}].value=this.value"></td>
+              <td><button class="kv-del" onclick="removeHeader(${i})">&times;</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  } else if (activeReqTab === 'body') {
+    body.innerHTML = `
+      <div style="margin-bottom:8px">
+        <select id="body-type" style="font-size:12px;padding:4px 8px">
+          <option value="json">JSON</option><option value="text">Text</option><option value="form">Form URL-Encoded</option><option value="xml">XML</option>
+        </select>
+      </div>
+      <textarea id="req-body-textarea" placeholder='{ "key": "value" }' spellcheck="false">${esc(document.getElementById('req-body-textarea')?.value || '')}</textarea>`;
+  } else if (activeReqTab === 'auth') {
+    const p = profiles.find(p => p.id === selectedProfileId);
+    body.innerHTML = `
+      <div class="form-group">
+        <label>Profile</label>
+        <select id="auth-profile-select" onchange="selectedProfileId=this.value;renderReqTab();renderSidebar()">
+          <option value="">None</option>
+          ${profiles.map(pr => `<option value="${pr.id}" ${selectedProfileId === pr.id ? 'selected' : ''}>${pr.name || 'Unnamed'}</option>`).join('')}
+        </select>
+      </div>
+      ${p ? `
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:12px;margin-top:8px">
+          <div style="margin-bottom:6px"><strong style="color:var(--text2)">mTLS:</strong> ${p.mtls?.cert ? '&#10003; Configured' : 'Not configured'}</div>
+          <div style="margin-bottom:6px"><strong style="color:var(--text2)">OAuth:</strong> ${p.oauth?.tokenUrl ? '&#10003; Configured' : 'Not configured'}</div>
+          ${p.oauth?.tokenUrl ? `<button class="btn-primary" style="font-size:12px;margin-top:4px" onclick="fetchToken()">Fetch Token</button> <span id="token-status" style="font-size:11px;color:var(--text2)"></span>` : ''}
+        </div>
+      ` : '<div style="color:var(--text2);font-size:12px;margin-top:8px">Select a profile or <a href="#" onclick="event.preventDefault();openProfileModal()" style="color:var(--accent)">create one</a> to use mTLS/OAuth.</div>'}`;
+  } else if (activeReqTab === 'certs') {
+    const p = profiles.find(p => p.id === selectedProfileId);
+    body.innerHTML = `
+      <div class="form-group">
+        <label>Profile</label>
+        <select onchange="selectedProfileId=this.value;renderReqTab();renderSidebar()">
+          <option value="">None</option>
+          ${profiles.map(pr => `<option value="${pr.id}" ${selectedProfileId === pr.id ? 'selected' : ''}>${pr.name || 'Unnamed'}</option>`).join('')}
+        </select>
+      </div>
+      ${p?.mtls ? `
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:12px;font-family:var(--font-mono);margin-top:8px">
+          <div style="margin-bottom:4px"><span style="color:var(--text2)">cert:</span> ${esc(p.mtls.cert || '—')}</div>
+          <div style="margin-bottom:4px"><span style="color:var(--text2)">key:</span> ${esc(p.mtls.key || '—')}</div>
+          <div style="margin-bottom:4px"><span style="color:var(--text2)">ca:</span> ${esc(p.mtls.ca || '—')}</div>
+          <div><span style="color:var(--text2)">passphrase:</span> ${p.mtls.passphrase ? '••••••' : '—'}</div>
+        </div>
+      ` : '<div style="color:var(--text2);font-size:12px;margin-top:8px">Select a profile with mTLS certificates configured.</div>'}`;
+  }
+}
+
+function renderResTab() {
+  const body = document.getElementById('res-tab-body');
+  const meta = document.getElementById('res-meta');
+  if (!lastResponse) {
+    meta.style.display = 'none';
+    body.innerHTML = '<div class="placeholder-text">Send a request to see the response</div>';
+    return;
+  }
+  meta.style.display = 'flex';
+  const r = lastResponse;
+  const sc = r.status || 0;
+  const cls = sc >= 500 ? 'status-5xx' : sc >= 400 ? 'status-4xx' : sc >= 300 ? 'status-3xx' : 'status-2xx';
+  document.getElementById('res-status').innerHTML = `<span class="status-badge ${cls}">${sc} ${r.statusMessage || ''}</span>`;
+  document.getElementById('res-time').textContent = `${r.time || 0} ms`;
+  document.getElementById('res-size').textContent = formatBytes(r.size || 0);
+
+  if (r.error) {
+    meta.style.display = 'none';
+    body.innerHTML = `<div class="response-body-pre" style="color:var(--red)">${esc(r.error)}${r.code ? ' (' + esc(r.code) + ')' : ''}\n\nTime: ${r.time || 0} ms</div>`;
+    return;
+  }
+
+  if (activeResTab === 'res-body') {
+    const bodyStr = typeof r.body === 'object' ? JSON.stringify(r.body, null, 2) : String(r.body);
+    body.innerHTML = `<pre class="response-body-pre">${syntaxHighlight(bodyStr)}</pre>`;
+  } else {
+    const hdrs = r.headers || {};
+    body.innerHTML = `
+      <table class="kv-table">
+        <thead><tr><td style="font-size:11px;color:var(--text2);padding-bottom:4px">Header</td><td style="font-size:11px;color:var(--text2);padding-bottom:4px">Value</td></tr></thead>
+        <tbody>${Object.entries(hdrs).map(([k, v]) => `<tr><td style="font-family:var(--font-mono);font-size:12px;color:var(--accent)">${esc(k)}</td><td style="font-family:var(--font-mono);font-size:12px">${esc(String(v))}</td></tr>`).join('')}</tbody>
+      </table>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Events
+// ═══════════════════════════════════════════════════════════════
+function bindEvents() {
+  document.querySelectorAll('#req-tabs .tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#req-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeReqTab = btn.dataset.tab;
+      renderReqTab();
+    });
+  });
+  document.querySelectorAll('#res-tabs .tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#res-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeResTab = btn.dataset.tab;
+      renderResTab();
+    });
+  });
+  document.getElementById('send-btn').addEventListener('click', sendRequest);
+  document.getElementById('save-btn').addEventListener('click', () => openSaveModal());
+  document.getElementById('url-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendRequest(); });
+
+  // Resize handle
+  const handle = document.getElementById('resize-handle');
+  const reqPanel = document.getElementById('request-panel');
+  let startY, startH;
+  handle.addEventListener('mousedown', (e) => {
+    startY = e.clientY; startH = reqPanel.offsetHeight;
+    const onMove = (e2) => { reqPanel.style.height = Math.max(100, startH + e2.clientY - startY) + 'px'; };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  // Close modals on overlay click
+  document.getElementById('profile-modal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeProfileModal(); });
+  document.getElementById('save-modal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeSaveModal(); });
+
+  // Keyboard shortcut: Ctrl+Enter to send
+  document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') sendRequest(); });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Send Request
+// ═══════════════════════════════════════════════════════════════
+async function sendRequest() {
+  if (sending) return;
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) return;
+
+  sending = true;
+  const sendBtn = document.getElementById('send-btn');
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner"></span>';
+  lastResponse = null;
+  renderResTab();
+
+  const method = document.getElementById('method-select').value;
+  const headers = {};
+  reqHeaders.forEach(h => { if (h.key.trim()) headers[h.key.trim()] = h.value; });
+
+  const bodyEl = document.getElementById('req-body-textarea');
+  let body = bodyEl ? bodyEl.value : '';
+  if (['GET', 'HEAD', 'OPTIONS'].includes(method)) body = '';
+
+  try {
+    const res = await fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, method, headers, body: body || undefined, profileId: selectedProfileId || undefined })
+    });
+    lastResponse = await res.json();
+  } catch (err) {
+    lastResponse = { error: err.message, time: 0 };
+  }
+  sending = false;
+  sendBtn.disabled = false;
+  sendBtn.textContent = 'Send';
+  renderResTab();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Headers
+// ═══════════════════════════════════════════════════════════════
+function autoAddHeaderRow(idx) {
+  if (idx === reqHeaders.length - 1) {
+    reqHeaders.push({ key: '', value: '' });
+    renderReqTab();
+  }
+}
+function removeHeader(idx) {
+  if (reqHeaders.length <= 1) { reqHeaders = [{ key: '', value: '' }]; } else { reqHeaders.splice(idx, 1); }
+  renderReqTab();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Profiles
+// ═══════════════════════════════════════════════════════════════
+function openProfileModal(profile) {
+  const m = document.getElementById('profile-modal');
+  document.getElementById('modal-title').textContent = profile ? 'Edit Profile' : 'New Profile';
+  document.getElementById('prof-id').value = profile?.id || '';
+  document.getElementById('prof-name').value = profile?.name || '';
+  document.getElementById('prof-cert').value = profile?.mtls?.cert || '';
+  document.getElementById('prof-key').value = profile?.mtls?.key || '';
+  document.getElementById('prof-ca').value = profile?.mtls?.ca || '';
+  document.getElementById('prof-pass').value = profile?.mtls?.passphrase || '';
+  document.getElementById('prof-token-url').value = profile?.oauth?.tokenUrl || '';
+  document.getElementById('prof-client-id').value = profile?.oauth?.clientId || '';
+  document.getElementById('prof-client-secret').value = profile?.oauth?.clientSecret || '';
+  document.getElementById('prof-scope').value = profile?.oauth?.scope || '';
+  m.style.display = 'flex';
+}
+function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
+async function saveProfile() {
+  const data = {
+    name: document.getElementById('prof-name').value.trim() || 'Unnamed',
+    mtls: {
+      cert: document.getElementById('prof-cert').value.trim(),
+      key: document.getElementById('prof-key').value.trim(),
+      ca: document.getElementById('prof-ca').value.trim(),
+      passphrase: document.getElementById('prof-pass').value,
+    },
+    oauth: {
+      tokenUrl: document.getElementById('prof-token-url').value.trim(),
+      clientId: document.getElementById('prof-client-id').value.trim(),
+      clientSecret: document.getElementById('prof-client-secret').value,
+      scope: document.getElementById('prof-scope').value.trim(),
+    },
+  };
+  const id = document.getElementById('prof-id').value;
+  if (id) data.id = id;
+  await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  await loadProfiles();
+  closeProfileModal();
+  renderSidebar();
+  renderReqTab();
+}
+function selectProfile(id) {
+  selectedProfileId = selectedProfileId === id ? '' : id;
+  renderSidebar();
+  renderReqTab();
+}
+function editProfile(id) {
+  const p = profiles.find(pr => pr.id === id);
+  if (p) openProfileModal(p);
+}
+async function deleteProfile(id) {
+  if (!confirm('Delete this profile?')) return;
+  await fetch(`/api/profiles/${id}`, { method: 'DELETE' });
+  if (selectedProfileId === id) selectedProfileId = '';
+  await loadProfiles();
+  renderSidebar();
+  renderReqTab();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Fetch OAuth Token
+// ═══════════════════════════════════════════════════════════════
+async function fetchToken() {
+  const p = profiles.find(pr => pr.id === selectedProfileId);
+  if (!p?.oauth?.tokenUrl) return;
+  const el = document.getElementById('token-status');
+  if (el) el.textContent = 'Fetching...';
+  try {
+    const res = await fetch('/api/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenUrl: p.oauth.tokenUrl, clientId: p.oauth.clientId, clientSecret: p.oauth.clientSecret, scope: p.oauth.scope, profileId: p.id })
+    });
+    const data = await res.json();
+    if (el) el.textContent = data.access_token ? 'Token acquired!' : 'Failed: ' + JSON.stringify(data);
+    if (el && data.access_token) el.style.color = 'var(--green)';
+  } catch (err) {
+    if (el) { el.textContent = 'Error: ' + err.message; el.style.color = 'var(--red)'; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Request Collection
+// ═══════════════════════════════════════════════════════════════
+function openSaveModal() {
+  document.getElementById('save-name').value = '';
+  editingRequestId = null;
+  document.getElementById('save-modal').style.display = 'flex';
+  document.getElementById('save-name').focus();
+}
+function closeSaveModal() { document.getElementById('save-modal').style.display = 'none'; }
+async function saveRequest() {
+  const name = document.getElementById('save-name').value.trim();
+  if (!name) return;
+  const method = document.getElementById('method-select').value;
+  const url = document.getElementById('url-input').value.trim();
+  const bodyEl = document.getElementById('req-body-textarea');
+  const headers = {};
+  reqHeaders.forEach(h => { if (h.key.trim()) headers[h.key.trim()] = h.value; });
+  const data = { name, method, url, headers, body: bodyEl ? bodyEl.value : '', profileId: selectedProfileId || undefined };
+  if (editingRequestId) data.id = editingRequestId;
+  await fetch('/api/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  await loadRequests();
+  closeSaveModal();
+  renderSidebar();
+}
+function loadRequest(id) {
+  const r = requests.find(req => req.id === id);
+  if (!r) return;
+  document.getElementById('method-select').value = r.method || 'GET';
+  document.getElementById('url-input').value = r.url || '';
+  reqHeaders = Object.entries(r.headers || {}).map(([key, value]) => ({ key, value }));
+  if (reqHeaders.length === 0) reqHeaders = [{ key: '', value: '' }];
+  reqHeaders.push({ key: '', value: '' });
+  if (r.profileId) selectedProfileId = r.profileId;
+  editingRequestId = r.id;
+  // Restore body after tab render
+  renderReqTab();
+  const bodyEl = document.getElementById('req-body-textarea');
+  if (bodyEl && r.body) bodyEl.value = r.body;
+}
+async function deleteRequest(id) {
+  if (!confirm('Delete this request?')) return;
+  await fetch(`/api/requests/${id}`, { method: 'DELETE' });
+  await loadRequests();
+  renderSidebar();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function formatBytes(b) {
+  if (b === 0) return '0 B';
+  const k = 1024, sizes = ['B', 'KB', 'MB'];
+  const i = Math.floor(Math.log(b) / Math.log(k));
+  return parseFloat((b / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+function syntaxHighlight(json) {
+  const s = esc(json);
+  return s.replace(/("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(\.\d+)?([eE][+-]?\d+)?)/g, (match) => {
+    let cls = 'color:var(--orange)'; // number
+    if (/^"/.test(match)) {
+      cls = /:$/.test(match) ? 'color:var(--accent)' : 'color:var(--green)'; // key : string
+    } else if (/true|false/.test(match)) {
+      cls = 'color:var(--purple)';
+    } else if (/null/.test(match)) {
+      cls = 'color:var(--red)';
+    }
+    return `<span style="${cls}">${match}</span>`;
+  });
+}
+</script>
+</body>
+</html>
