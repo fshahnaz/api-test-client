@@ -5,7 +5,7 @@ A local web-based API client (like Postman) that runs on Node.js. Supports **mut
 ## Quick Start
 
 ```bash
-cd mtls-api-client
+cd api-test-client
 npm install
 npm start
 ```
